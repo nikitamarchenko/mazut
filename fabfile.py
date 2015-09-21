@@ -2,7 +2,7 @@ __author__ = 'nmarchenko'
 
 from fabric.api import local, run, env
 
-FUEL_VM = '10.20.0.2'
+FUEL_VM = 'fuel'
 
 env.hosts = ['root@{}'.format(FUEL_VM)]
 
