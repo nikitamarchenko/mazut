@@ -10,16 +10,16 @@ FUEL_VM = 'fuel'
 env.hosts = ['root@{}'.format(FUEL_VM)]
 
 
-def init():
-    local('ssh-keygen -f ~/.ssh/known_hosts -R {}'.format(FUEL_VM))
-    local('ssh-keygen -f ~/.ssh/known_hosts -R 10.21.0.2')
-    local('ssh-copy-id -i ~/.ssh/id_rsa.pub root@{}'.format(FUEL_VM))
+def init(env=FUEL_VM):
+    local('ssh-keygen -f ~/.ssh/known_hosts -R {}'.format(env))
+    local("ssh-keygen -f ~/.ssh/known_hosts -R $(grep '{}' /etc/hosts | awk '{{print $1}}')".format(env))
+    local('ssh-copy-id -i ~/.ssh/id_rsa.pub root@{}'.format(env))
     run('yum install nano htop -y')
     run('mv /etc/fuel/client/config.yaml ~/.config.yaml')
     run('echo "export FUELCLIENT_CUSTOM_SETTINGS=/root/.config.yaml" >> .bashrc')
 
 
-def setup_env_network(env):
+def setup_env_network(env=FUEL_VM, fuel_port=8000):
     from os import environ
     environ.setdefault("DJANGO_SETTINGS_MODULE", "devops.settings")
 
@@ -36,8 +36,8 @@ def setup_env_network(env):
         ip[3] = str(last_octet)
         return '.'.join(ip)
 
-    for cluster in clusters('{}:8000'.format(FUEL_VM), 'admin', 'admin'):
-        net = get_network('{}:8000'.format(FUEL_VM), 'admin', 'admin', cluster['id'])
+    for cluster in clusters('{}:{}'.format(env, fuel_port), 'admin', 'admin'):
+        net = get_network('{}:{}'.format(env, fuel_port), 'admin', 'admin', cluster['id'])
 
         public = get_net('public')
         management = get_net('management')
@@ -94,4 +94,4 @@ def setup_env_network(env):
         net['management_vip'] = make_ip(management, 2)  # "10.21.2.2",
 
         pprint.pprint(net)
-        put_network('{}:8000'.format(FUEL_VM), 'admin', 'admin', cluster['id'], net)
+        put_network('{}:{}'.format(env, fuel_port), 'admin', 'admin', cluster['id'], net)
