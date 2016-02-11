@@ -2,29 +2,47 @@ __author__ = 'nmarchenko'
 
 from fabric.api import local, run, env
 from helper.fuel import clusters, get_network, put_network
-
 import pprint
 
-FUEL_VM = 'fuel'
-
-env.hosts = ['root@{}'.format(FUEL_VM)]
+env.user = 'root'
 
 
-def init(env=FUEL_VM):
-    local('ssh-keygen -f ~/.ssh/known_hosts -R {}'.format(env))
-    local("ssh-keygen -f ~/.ssh/known_hosts -R $(grep '{}' /etc/hosts | awk '{{print $1}}')".format(env))
-    local('ssh-copy-id -i ~/.ssh/id_rsa.pub root@{}'.format(env))
+def init():
+    local('ssh-keygen -f ~/.ssh/known_hosts -R {}'.format(env.host))
+    local("ssh-keygen -f ~/.ssh/known_hosts -R $(grep '{}' /etc/hosts | awk '{{print $1}}')".format(env.host))
+    local('ssh-copy-id -i ~/.ssh/id_rsa.pub root@{}'.format(env.host))
     run('yum install nano htop -y')
     run('mv /etc/fuel/client/config.yaml ~/.config.yaml')
     run('echo "export FUELCLIENT_CUSTOM_SETTINGS=/root/.config.yaml" >> .bashrc')
 
 
-def setup_env_network(env=FUEL_VM, fuel_port=8000):
+def update():
+    from os import environ
+    from devops.models import Environment
+
+    environ.setdefault("DJANGO_SETTINGS_MODULE", "devops.settings")
+
+    with open("hosts.pp", "w") as pp:
+        for e in Environment.list_all():
+            ip = e.nodes().admin.get_ip_address_by_network_name(e.admin_net)
+            pp.write("host {{ '{}': ip => '{}' }}\n".format(e.name, ip))
+
+    local("sudo puppet apply hosts.pp")
+
+
+def create(name, iso):
+    local("dos.py create --vcpu 2 --node-count 3 --ram 1024 --iso-path {}"
+          " --admin-ram 2048 --admin-vcpu 4 --second-disk-size 0 --third-disk-size 0 "
+          "{}.fuel".format(iso, name))
+    update()
+
+
+def setup_env_network(fuel_port=8000):
     from os import environ
     environ.setdefault("DJANGO_SETTINGS_MODULE", "devops.settings")
 
     from devops.models import Environment
-    s = Environment.get(name=env)
+    s = Environment.get(name=env.host)
     for net in s.get_networks():
         print net.name, net.ip, net.netmask, net.default_gw
 
@@ -36,8 +54,8 @@ def setup_env_network(env=FUEL_VM, fuel_port=8000):
         ip[3] = str(last_octet)
         return '.'.join(ip)
 
-    for cluster in clusters('{}:{}'.format(env, fuel_port), 'admin', 'admin'):
-        net = get_network('{}:{}'.format(env, fuel_port), 'admin', 'admin', cluster['id'])
+    for cluster in clusters('{}:{}'.format(env.host, fuel_port), 'admin', 'admin'):
+        net = get_network('{}:{}'.format(env.host, fuel_port), 'admin', 'admin', cluster['id'])
 
         public = get_net('public')
         management = get_net('management')
@@ -94,4 +112,4 @@ def setup_env_network(env=FUEL_VM, fuel_port=8000):
         net['management_vip'] = make_ip(management, 2)  # "10.21.2.2",
 
         pprint.pprint(net)
-        put_network('{}:{}'.format(env, fuel_port), 'admin', 'admin', cluster['id'], net)
+        put_network('{}:{}'.format(env.host, fuel_port), 'admin', 'admin', cluster['id'], net)
